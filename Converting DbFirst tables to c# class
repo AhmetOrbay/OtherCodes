@@ -1,0 +1,80 @@
+using System;
+using System.Collections.Generic;
+using System.Data;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Reflection;
+
+namespace ConsoleApp1
+{
+    class Program
+    {
+        static void Main(string[] args)
+        {
+            var connectionString = "Data Source=myServerAddress;Initial Catalog=myDataBase;User ID=myUsername;Password=myPassword";
+
+            using (var connection = new SqlConnection(connectionString))
+            {
+                connection.Open();
+
+                var cmd = new SqlCommand("SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME in (SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES)", connection);
+
+                var adapter = new SqlDataAdapter(cmd);
+                var dataTable = new DataTable();
+                adapter.Fill(dataTable);
+
+                var tableNames = dataTable.AsEnumerable().Select(row => row.Field<string>("TABLE_NAME")).Distinct();
+
+                foreach (var tableName in tableNames)
+                {
+                    var rows = dataTable.AsEnumerable().Where(row => row.Field<string>("TABLE_NAME") == tableName);
+
+                    var className = tableName;
+
+                    var classProperties = new List<ClassProperty>();
+
+                    foreach (var row in rows)
+                    {
+                        var propertyName = row.Field<string>("COLUMN_NAME");
+                        var propertyType = Type.GetType(row.Field<string>("DATA_TYPE"));
+
+                        classProperties.Add(new ClassProperty(propertyName, propertyType));
+                    }
+
+                    var generatedClass = GenerateClass(className, classProperties);
+
+                    Console.WriteLine(generatedClass);
+                }
+            }
+        }
+
+        private static string GenerateClass(string className, List<ClassProperty> classProperties)
+        {
+            var classText = $"public class {className}\n{{\n";
+
+            foreach (var property in classProperties)
+            {
+                var propertyName = property.Name;
+                var propertyType = property.Type.Name;
+
+                classText += $"    public {propertyType} {propertyName} {{ get; set; }}\n";
+            }
+
+            classText += "}";
+
+            return classText;
+        }
+
+        private class ClassProperty
+        {
+            public string Name { get; set; }
+            public Type Type { get; set; }
+
+            public ClassProperty(string name, Type type)
+            {
+                Name = name;
+                Type = type;
+            }
+        }
+    }
+}
